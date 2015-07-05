@@ -42,12 +42,8 @@ UNICODE_STRING _var = { sizeof(_string) - sizeof(WCHAR), sizeof(_string), (PWCH)
 
 BOOL SetPrivilege(HANDLE hToken, LPCTSTR lpszPrivilege, BOOL bEnablePrivilege);
 BOOL SetDebugPrivilege();
-BOOL wideStringReplace(PWSTR target, PWSTR findText, PWSTR insertText);
-BOOL unicodeStringReplace_bugged(PUNICODE_STRING target, PUNICODE_STRING findText, PUNICODE_STRING insertText);
-BOOL unicodeStringMatch_ignoreDllCase_old(PUNICODE_STRING str1, PUNICODE_STRING str2);
 BOOL unicodeStringMatch(PUNICODE_STRING str1, PUNICODE_STRING str2);
 BOOL checkForKnownACdlls(PUNICODE_STRING fullDllName);
-BOOL pebHasAppCompatDlls_old(P_moonsols_win7_PEB peb_r);
 BOOL pebHasAppCompatFlags(P_moonsols_win7_PEB peb);
 char * getFileName(char * fullPath);
 
@@ -72,9 +68,9 @@ BOOL SetPrivilege(HANDLE hToken,          // access token handle
 	LUID luid;
 
 	if (!LookupPrivilegeValue(
-		NULL,            // lookup privilege on local system
-		lpszPrivilege,   // privilege to lookup 
-		&luid))        // receives LUID of privilege
+		NULL,				// lookup privilege on local system
+		lpszPrivilege,		// privilege to lookup 
+		&luid))				// receives LUID of privilege
 	{
 		DWORD err = GetLastError();
 		printf("LookupPrivilegeValue error: %u\n", err);
@@ -99,7 +95,7 @@ BOOL SetPrivilege(HANDLE hToken,          // access token handle
 		(PDWORD)NULL))
 	{
 		DWORD err = GetLastError();
-		printf("warning: AdjustTokenPrivileges error: %u\n", err);
+		printf("Warning: AdjustTokenPrivileges error: %u\n", err);
 		return FALSE;
 	}
 
@@ -146,131 +142,6 @@ BOOL unicodeCopyString(PUNICODE_STRING from, PUNICODE_STRING to)
 	return TRUE;
 }
 
-BOOL wideStringReplace(PWSTR target, PWSTR findText, PWSTR insertText){
-	if (target == NULL || findText == NULL || insertText == NULL)
-	{
-		if (debuggingStringOpProblem)
-			printf("One or more of the string pointers are invalid\n");
-		return FALSE;
-	}
-
-	unsigned int findTextLength = 0;
-	while (findText[findTextLength] != NULL)
-		findTextLength++;
-
-	BOOL foundFlag = TRUE;
-	unsigned int i, j, offset = 0;
-	for (i = 0; target[i] != NULL; i++)
-	{
-		// search
-		if (target[i] == findText[0])
-		{
-			if (debuggingStringOpProblem)
-				printf("First letter found: %c\n", target[i]);
-			foundFlag = TRUE;
-			offset = 0;
-			while (findText[offset] != NULL)
-			{
-				if (target[i + offset] != findText[offset])
-				{
-					if (debuggingStringOpProblem)
-						printf("Next letter not found: '%c' vs. '%c'   Breaking...\n", target[i + offset], findText[offset]);
-					foundFlag = FALSE;
-					break;
-				}
-				offset++;
-
-				//if (target[i + offset] == NULL && debug)
-				//	printf("Ran out of string on target... checking if same for findText...\n");
-
-				if (target[i + offset] == NULL && findText[offset] != NULL)
-				{
-					if (debuggingStringOpProblem)
-						printf("\tYup.. Ran out of string on target and not the findText.. breaking\n");
-					foundFlag = FALSE;
-					break;
-				} // end test of end of string
-
-			} // end compare the rest of the letters
-
-			// REPLACE
-			if (foundFlag)
-			{
-				for (j = 0; insertText[j] != NULL; j++)
-				{
-					if (debuggingStringOpProblem)
-						printf("Replaced '%c' with '%c'\n", target[i + j], insertText[j]);
-					target[i + j] = insertText[j];
-				}
-			}
-		} // end compare first char
-	}// end for/while
-
-	return TRUE;
-}
-
-BOOL unicodeStringReplace_bugged(PUNICODE_STRING target, PUNICODE_STRING findText, PUNICODE_STRING insertText){
-	// I'm not putting up with malformed structs
-	if (target->MaximumLength < target->Length ||
-		findText->MaximumLength < findText->Length ||
-		insertText->MaximumLength < insertText->Length)
-	{
-		return FALSE;
-	}
-	// basic checks
-	else if (target->Length == 0 || findText->Length == 0 || insertText->Length == 0){
-		//fprintf(stderr, "Unicode String lengths are 0\n");
-		if (debuggingStringOpProblem)
-			printf("One of the unicode string's are of length 0\n");
-		return FALSE;
-	}
-	else if (target->MaximumLength < findText->MaximumLength || target->MaximumLength < insertText->Length){
-		//fprintf(stderr, "Unicode MAX String lengths are 0\n");
-		if (debuggingStringOpProblem)
-			printf("The target cannot handle either the findText or the insertText\n");
-		return FALSE;
-	}
-
-	unsigned int i, offset = 0;
-	BOOL foundSubString = TRUE;
-	for (i = 0; i < target->Length; i++){
-
-		// first letter match
-		if (target->Buffer[i] == findText->Buffer[0]){
-
-			// FIND
-			// check the rest of the characters
-			for (offset = 0; offset < findText->Length &&
-				(i + offset) < target->Length &&
-				(i + offset) < target->MaximumLength; // redundunte check, but better safe than sorry
-			offset++)
-			{
-				if (target->Buffer[i + offset] != findText->Buffer[offset]){ // no match
-					foundSubString = FALSE;
-					break;
-				}// end break case
-			}// end for each character
-
-			// REPLACE
-			//if (offset == findText->Length){	// the length doesn't match for some reason
-			if (foundSubString){
-				for (offset = 0; offset < findText->Length &&
-					(i + offset) < target->Length &&			// redundunte check, but better safe than sorry
-					(i + offset) < target->MaximumLength;		// redundunte check, but better safe than sorry
-				offset++)
-				{
-					target->Buffer[i + offset] = findText->Buffer[offset];
-				}
-				return TRUE;
-			}
-			// reset flag
-			foundSubString = TRUE;
-
-		}// end check on first character
-	}// end of for each character
-	return FALSE;
-}
-
 // returns a new ascii string with only the file created from the full path
 // reimplement these later to prevent hooking
 char * getFileName(char * fullPath)
@@ -288,101 +159,6 @@ char * getFileName(char * fullPath)
 	return filename;
 }
 
-
-// sometimes the full dll name ends with a '.DLL' instead of the real file extention '.dll'
-// so this function makes upper case versions of the strings
-BOOL unicodeStringMatch_ignoreDllCase_old(UNICODE_STRING str1, UNICODE_STRING str2){
-	if (str1.Buffer == NULL || str2.Buffer == NULL)
-	{
-		if (debug)
-		{
-			printf("ERROR: unicodeStringMatch_ignoreDllCase One or both strings to be compared were NULL\n");
-		}
-		return FALSE;
-	}
-
-
-	BOOL result = FALSE;
-	// NOTE: This works because '.dll' and .DLL' are always at the end of a null string
-	DECLARE_CONST_UNICODE_STRING(lowerCasedll, L".dll");
-	DECLARE_CONST_UNICODE_STRING(upperCaseDLL, L".DLL");
-
-	// declare these values locally because I can't malloc for some reason
-	UNICODE_STRING str1_upperDLL;
-	PWSTR str1_upperDLL_buffer[MAX_UNICODE_PATH];
-	str1_upperDLL.Buffer = (PWSTR)str1_upperDLL_buffer;
-
-	UNICODE_STRING str2_upperDLL;
-	PWSTR str2_upperDLL_buffer[MAX_UNICODE_PATH];
-	str2_upperDLL.Buffer = (PWSTR)str2_upperDLL_buffer;
-
-
-	// set the first string
-	str1_upperDLL.Length = str1.Length;
-	str1_upperDLL.MaximumLength = str1.MaximumLength;
-	// copy the string
-	unicodeCopyString(&str1, &str1_upperDLL);
-	// change the '.dll' to '.DLL' in the new string
-	//if (unicodeStringReplace(&str1_upperDLL, &lowerCasedll, &upperCaseDLL) && debug){
-	if (wideStringReplace(str1_upperDLL.Buffer, lowerCasedll.Buffer, upperCaseDLL.Buffer) && debuggingStringOpProblem){
-		printf("Changed: %wZ  to  %wZ\n", str1, str1_upperDLL);
-	}
-
-	// set the second string
-	str2_upperDLL.Length = str1.Length;
-	str2_upperDLL.MaximumLength = str1.MaximumLength;
-	// copy the string
-	unicodeCopyString(&str2, &str2_upperDLL);
-	// change the '.dll' to '.DLL' in the new string
-	if (wideStringReplace(str1_upperDLL.Buffer, lowerCasedll.Buffer, upperCaseDLL.Buffer) && debuggingStringOpProblem){
-		printf("Changed: %wZ  to  %wZ\n", str1, str1_upperDLL);
-	}
-
-
-	/*
-	// get memory for unicode struct
-	PUNICODE_STRING str1_upperDLL = (PUNICODE_STRING)malloc(sizeof(UNICODE_STRING));
-	// get memory for the unicode string
-	str1_upperDLL->Buffer = (PWSTR)malloc(sizeof(UNICODE_STRING));
-	// set the first string
-	str1_upperDLL->Length = str1.Length;
-	str1_upperDLL->MaximumLength = str1.MaximumLength;
-	// copy the string
-	unicodeCopyString(&str1, str1_upperDLL);
-	// change the '.dll' to '.DLL' in the new string
-	if (unicodeStringReplace(str1_upperDLL, &lowerCasedll, &upperCaseDLL) && debug){
-	printf("Changed: %wZ  to  %wZ\n", str1, *str1_upperDLL);
-	}
-
-
-	HANDLE heapHandle = GetProcessHeap();
-	if (heapHandle == NULL){
-	printf("Error: Could not get heap. Error code: 0x%x\n", GetLastError());
-	}
-	// don't know why these keep failing
-	//PUNICODE_STRING str2_upperDLL = (PUNICODE_STRING)malloc(sizeof(UNICODE_STRING));
-	//str2_upperDLL->Buffer = (PWSTR)malloc(sizeof(UNICODE_STRING));	// that's why
-	HeapAlloc(heapHandle, HEAP_ZERO_MEMORY, sizeof(UNICODE_STRING));
-
-	return FALSE;
-	printf("I allociated!\n");
-	PUNICODE_STRING str2_upperDLL = (PUNICODE_STRING)HeapAlloc(heapHandle, HEAP_ZERO_MEMORY, sizeof(UNICODE_STRING));
-	str2_upperDLL->Buffer = (PWSTR)malloc(sizeof(UNICODE_STRING));
-	// set the second string
-	str2_upperDLL->Length = str2.Length;
-	str2_upperDLL->MaximumLength = str2.MaximumLength;
-
-	unicodeCopyString(&str2, str2_upperDLL);
-	// change the '.dll' to '.DLL' in the new string
-	if (unicodeStringReplace(str2_upperDLL, &lowerCasedll, &upperCaseDLL) && debug){
-	printf("Changed: %wZ  to  %wZ\n", str2, *str2_upperDLL);
-	}
-	*/
-
-	BOOL restult = unicodeStringMatch(&str1_upperDLL, &str2_upperDLL);
-	return result;
-}
-
 // I make my own functions so I don't have to call API's that could be hooked
 BOOL unicodeStringMatch(PUNICODE_STRING str1, PUNICODE_STRING str2){
 
@@ -394,15 +170,9 @@ BOOL unicodeStringMatch(PUNICODE_STRING str1, PUNICODE_STRING str2){
 	}
 	// basic checks
 	else if (str1->Length == str2->Length && str1->Length == 0){
-		//fprintf(stderr, "Unicode String lengths are 0\n");
-		if (debuggingStringOpProblem)
-			printf("Unicode String lengths are 0\n");
 		return TRUE;
 	}
 	else if (str1->MaximumLength == str2->MaximumLength && str1->MaximumLength == 0){
-		//fprintf(stderr, "Unicode MAX String lengths are 0\n");
-		if (debuggingStringOpProblem)
-			printf("Unicode MAX String lengths are 0\n");
 		return TRUE;
 	}
 	else if (str1->Length == 0 || str2->Length == 0){
@@ -427,35 +197,16 @@ BOOL unicodeStringMatch(PUNICODE_STRING str1, PUNICODE_STRING str2){
 			return FALSE;
 		}
 
-		/*
-		if (i != 0 && // short circuit for testing the
-		str1->Buffer[i - 1] == str2->Buffer[i - 1])
-		{
-
-		}*/
-
 
 	}
 
 	printf("Warning: %wZ was found!\n", str1);
-	//if (verbose || veryVerbose || debuggingStringOpProblem || debug){
-	//printf("Warning: %wZ was found!\n", str1);
-
-	/*
-	if (i != str1->Length && i != str2->Length){
-	printf("The counter was %d str1 length was %d and str 2 was %d \n", i, str1->Length, str2->Length);
-	}*/
-
-	//}
 	return TRUE;
 }
 
 BOOL unicodeStringMatch_ignoreCase(PUNICODE_STRING str1, PUNICODE_STRING str2){
 	unsigned char char1Upper = 0;
 	unsigned char char2Upper = 0;
-	if (debuggingStringOpProblem){
-		printf("\t\tComparing Executables: '%wZ' vs. '%wZ'\n", str1, str2);
-	}
 
 	// I'm not putting up with malformed structs
 	if (str1->MaximumLength < str1->Length ||
@@ -466,19 +217,13 @@ BOOL unicodeStringMatch_ignoreCase(PUNICODE_STRING str1, PUNICODE_STRING str2){
 	// basic checks
 	else if (str1->Length == str2->Length && str1->Length == 0){
 		//fprintf(stderr, "Unicode String lengths are 0\n");
-		if (debuggingStringOpProblem)
-			printf("Unicode String lengths are 0\n");
 		return TRUE;
 	}
 	else if (str1->MaximumLength == str2->MaximumLength && str1->MaximumLength == 0){
 		//fprintf(stderr, "Unicode MAX String lengths are 0\n");
-		if (debuggingStringOpProblem)
-			printf("Unicode MAX String lengths are 0\n");
 		return TRUE;
 	}
 	else if (str1->Length == 0 || str2->Length == 0){
-		if (debuggingStringOpProblem)
-			printf("One of string lengths is 0 and the other is not.\n");
 		return FALSE;
 	}
 
@@ -516,16 +261,13 @@ BOOL unicodeStringMatch_ignoreCase(PUNICODE_STRING str1, PUNICODE_STRING str2){
 
 		if (char1Upper != char2Upper)
 		{
-			if (debuggingStringOpProblem) {
-				printf("\t\t\tFailed in Comparing %#x ('%c') to %#x ('%c')\n", char1Upper, char1Upper, char2Upper, char2Upper);
-			}
 			return FALSE;
 		}
 
 
 	}
 
-	if (verbose || debuggingStringOpProblem || debug){
+	if (verbose  || debug){
 		printf("Warning: '%wZ' was found!\n", str2);
 		/*
 		if (i != str1->Length && i != str2->Length){
@@ -906,7 +648,6 @@ int readRemoteProcessForShims(PROCESSENTRY32 pe32, PROCESS_INFORMATION pi, WORD 
 			{
 
 				if (debug) printf("PEB Address in %s: %#p\n", pe32.szExeFile, pbi.PebBaseAddress);
-				if (debuggingRemotePEBproblem) printf("The PEB address (according to NtQueryInformationProcess) is at address: %#p\n", pbi.PebBaseAddress);
 				// I need the undocumented fields so I'm using a undocument struct re-created from windbg
 				// I can do this a few different ways (I did this becuase I found a bug in one of the meathods:
 
@@ -919,46 +660,6 @@ int readRemoteProcessForShims(PROCESSENTRY32 pe32, PROCESS_INFORMATION pi, WORD 
 
 				// 3. Re-read the remote memory
 				ReadProcessMemory(pi.hProcess, pbi.PebBaseAddress, &undocumented_remote_peb, sizeof(moonsols_win7_PEB), &bytes_read_for_undocumented_remote_peb);
-
-
-
-				if (debuggingRemotePEBproblem){
-					printf("Address of AppCompatFlag Low %#p has value %#x\n", &undocumented_remote_peb.AppCompatFlags.LowPart, undocumented_remote_peb.AppCompatFlags.LowPart);
-					printf("Address of AppCompatFlag High %#p has value %#x\n", &undocumented_remote_peb.AppCompatFlags.HighPart, undocumented_remote_peb.AppCompatFlags.HighPart);
-					printf("Address of AppCompatFlagsUser Low %#p has value %#x\n", &undocumented_remote_peb.AppCompatFlagsUser.LowPart, undocumented_remote_peb.AppCompatFlagsUser.LowPart);
-					printf("Address of AppCompatFlagsUser High %#p has value %#x\n", &undocumented_remote_peb.AppCompatFlagsUser.HighPart, undocumented_remote_peb.AppCompatFlagsUser.HighPart);
-					printf("Address of ShimData Pointer %#p has value %#x\n", &undocumented_remote_peb.pShimData, undocumented_remote_peb.pShimData);
-					printf("Address of AppCompatInfo Pointer %#p has value %#x\n", &undocumented_remote_peb.AppCompatInfo, undocumented_remote_peb.AppCompatInfo);
-
-					P_moonsols_win7_PEB localPEB = (P_moonsols_win7_PEB)pbi.PebBaseAddress;
-					printf("Address of AppCompatFlag Low %#p has value %#x\n", &localPEB->AppCompatFlags.LowPart, localPEB->AppCompatFlags.LowPart);
-					printf("Address of AppCompatFlag High %#p has value %#x\n", &localPEB->AppCompatFlags.HighPart, localPEB->AppCompatFlags.HighPart);
-					printf("Address of AppCompatFlagsUser Low %#p has value %#x\n", &localPEB->AppCompatFlagsUser.LowPart, localPEB->AppCompatFlagsUser.LowPart);
-					printf("Address of AppCompatFlagsUser High %#p has value %#x\n", &localPEB->AppCompatFlagsUser.HighPart, localPEB->AppCompatFlagsUser.HighPart);
-					printf("Address of ShimData Pointer %#p has value %#x\n", &localPEB->pShimData, localPEB->pShimData);
-					printf("Address of AppCompatInfo Pointer %#p has value %#x\n", &localPEB->AppCompatInfo, localPEB->AppCompatInfo);
-
-					//memcpy(&undocumented_remote_peb, &remote_peb, bytes_read);
-
-					int cmpResult = memcmp(&pbi.PebBaseAddress, &undocumented_remote_peb, bytes_read);
-
-					printf("Result from Comparing the local PEB (pbi.PebBaseAddress) to the remote PEB (undocumented_remote_peb): ");
-					if (cmpResult == 0)
-						printf("Match\n");
-					else if (cmpResult > 0)
-						printf("Local PEB as some data at position %d that is a higher value than the remote PEB.\n", cmpResult);
-					else if (cmpResult < 0)
-						printf("Remote PEB as some data at position %d that is a higher value than the local PEB.\n", cmpResult);
-					else
-						printf("Some Weird error: %d\n", cmpResult);
-
-					ReadProcessMemory(pi.hProcess, pbi.PebBaseAddress, &undocumented_remote_peb, sizeof(_PEB), &bytes_read);
-
-					printf("Remote PEB Address: %#p\n", pbi.PebBaseAddress);
-					printf("Address of copied over PEB in current address space: %#p\n", &remote_peb);
-
-				}
-
 
 
 
@@ -1163,43 +864,13 @@ int readRemoteProcessForShims(PROCESSENTRY32 pe32, PROCESS_INFORMATION pi, WORD 
 
 int main(void){
 
-	// address of PEB meathod 1
-	/*
-	__asm
-	{
-	mov	eax, fs :0x30
-	mov assmPEB, eax
-	}
-
-	__asm
-	{
-	mov	eax, gs :0x60
-	mov assmPEB, eax
-	}
-
-	printf("Address of PEB: %x\n", assmPEB);
-	*/
-
-
-	// scan another process
-	//WOW64_CONTEXT a;
-	//Wow64GetThreadContext(threadHandle, &a);
-	//a.SegGs;		// how does the gs:[0x60] work?
-
-
-	// get peb
-
-
-	// address of PEB meathod 2
-	//PPEB peb = (PPEB)__readgsqword(0x30);
-
 	// To open a handle to another local process and obtain full access rights, you must enable the SeDebugPrivilege 
 	SetDebugPrivilege();
 
 	// check my own PEB
-	PPEB peb = (PPEB)__readgsqword(0x60);										// documented
+	PPEB peb = (PPEB)__readgsqword(0x60);											// documented
 	P_moonsols_win7_PEB local_peb_undocumented = (P_moonsols_win7_PEB)peb;			// undocumented 
-	if (debuggingRemotePEBproblem){
+	if (debug){
 		printf("Address of local x64 PEB: %#p\n", peb);
 		printf("Address of local x32 PEB: %#p\n", __readgsdword(0x30));
 	}
@@ -1207,57 +878,8 @@ int main(void){
 	printf("Checking for shim in local process...\n");
 	if (pebHasAppCompatFlags(local_peb_undocumented)){
 		printf("Shim Flags Detected in Self Process\n");
+		printf("Checking Remote Processes...\n");
 	}
-
-	//pebHasAppCompatFlags
-	/* mostly Working
-	if (pebHasAppCompatDlls(peb_documented)){
-	printf("Shim Detected in Self Process\n");
-	}*/
-
-	/* Not Working
-	if (pebHasAppCompatFlags(peb)){
-	printf("Shim Detected. Engaging Anti-Shim.\n");
-
-	char thisFileName[MAX_PATH];
-	char newFileName[MAX_PATH] = "XXXXXXXXXX.exe";
-
-	// make new random file name
-	int i;
-	unsigned int    number;
-	for (i = 0; i < 10; i++){
-	rand_s(&number);
-	number = number % 26;
-	number += 0x41;
-	newFileName[i] = number;
-	}
-
-
-
-	//At some point check against DeRandomizeExeName Fix
-
-
-	// copy file
-	GetModuleFileName(NULL, thisFileName, MAX_PATH);
-	CopyFile(thisFileName, newFileName, FALSE);
-
-	// pass on parameters except for the shim engine flag
-	// execute file
-	// look into preventing it from getting shimmed with environment variable
-	//CreateProcess(newFileName, NULL, NULL, NULL, TRUE, NORMAL_PRIORITY_CLASS, )
-
-	// Look into:
-	// PropagateProcessHistory
-	// The problem occurs when an application incorrectly fails to apply an application fix.
-	// The fix sets the _PROCESS_HISTORY environment variable so that child processes can look in the parent directory for matching information while searching for application fixes
-
-
-
-
-	}*/
-
-
-	printf("Checking Remote Processes...\n");
 
 
 	HANDLE hProcessSnap;
@@ -1282,14 +904,6 @@ int main(void){
 	pe32.dwSize = sizeof(PROCESSENTRY32);
 
 
-	// get context of the first thread of each process 
-	/*
-	WOW64_CONTEXT context;
-	context.ContextFlags = (CONTEXT_FULL);
-	BOOL contextSuccess = Wow64GetThreadContext(thread, &context);
-	printf("eax=%08X, ebx=%08X, ecx=%08X\n", context.Eax, context.Ebx, context.Ecx);
-	*/
-
 	// Retrieve information about the first process,
 	// and exit if unsuccessful
 	if (!Process32First(hProcessSnap, &pe32))
@@ -1308,40 +922,20 @@ int main(void){
 	do
 	{
 
-		if (debuggingRemotePEBproblem){
-			printf("Remotely Scanning self Process\n");
-			pi.hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, GetCurrentProcessId());
-		}
-		else {
-			pi.hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pe32.th32ProcessID);	//PROCESS_ALL_ACCESS will normally work. With  READ_CONTROL I get a lot of access denied
-		}
+		//PROCESS_ALL_ACCESS will normally work. With  READ_CONTROL I get a lot of access denied
+		pi.hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pe32.th32ProcessID);	
 
-		if (verbose && !debuggingRemotePEBproblem){
+		if (verbose){
 			printf("Scanning Process \t%s", pe32.szExeFile);
 			printf("\tPID \t%d\n", pe32.th32ProcessID);
 		}
-
-		// get the first remote thread, get the 32bit PEB from the FS register to get the 32 bit DLLs (ish)
-		//WOW64_CONTEXT	Ctx_Wow64;
-		//CONTEXT			Ctx_64;
-
-		//ZeroMemory(&Ctx_64, sizeof(Ctx_64));
-		//ZeroMemory(&Ctx_Wow64, sizeof(Ctx_Wow64));
-
-		//Ctx_64.ContextFlags = CONTEXT_ALL;
-		//Ctx_Wow64.ContextFlags = CONTEXT_ALL;
-
-		//pi.hThread = 
-		//BOOL ret = GetThreadContext(pi.hThread, &Ctx_64);
-
-
-
 
 
 		if (pi.hProcess == 0){
 			unsigned int lastError = GetLastError();
 			if (lastError == 0x5){
-				if (0 != strcmp(pe32.szExeFile, "System") && 0 != strcmp(pe32.szExeFile, "audiodg.exe")){ //"System" "Process" +	"audiodg.exe" cannot be read from
+				if (0 != strcmp(pe32.szExeFile, "System") && 0 != strcmp(pe32.szExeFile, "audiodg.exe")){ 
+					//"System" "Process" +	"audiodg.exe" cannot be read from
 					printf("STATUS_ACCESS_DENIED for '%s' Try running with higher Privilages\n", pe32.szExeFile);
 				}
 			}
@@ -1357,45 +951,5 @@ int main(void){
 	} while (Process32Next(hProcessSnap, &pe32)); //end do while
 	CloseHandle(hProcessSnap);
 
-
-
-
-
-	/*
-	// Access a shimmed registry value - The virt registry fix doesn't seem to work.
-	DWORD BufferSize = 8192;
-	PPERF_DATA_BLOCK PerfData = (PPERF_DATA_BLOCK)malloc(BufferSize);
-	char buffer[8192];
-	LONG returnStatus = RegGetValue(HKEY_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", "SamsungRapidApp", RRF_RT_ANY, NULL, (PVOID)&buffer, &BufferSize);
-	if (returnStatus == ERROR_SUCCESS){
-	printf("\n\nRead %d bytes correctly (no shim)\n", BufferSize);
-	printf("%s\n", buffer);
-	}
-	else {
-	printf("\nShim Worked - RegQueryValueEx failed (%d)\n", returnStatus);
-	}
-	*/
-
-
-
 	return 0;
 }
-
-
-/*
-sdb file names
-// known XP x86
-apph_sp.sdb
-apphelp.sdb
-drvmain.sdb
-msimain.sdb
-sysmain.sdb
-
-
-//mal
-VC_browsers32.sdb
-VC_browsers64,sdb
-
-
-
-*/
