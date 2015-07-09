@@ -677,7 +677,7 @@ int readRemoteProcessForShims(PROCESSENTRY32 pe32, PROCESS_INFORMATION pi, WORD 
 				}
 				else{
 					printf("*****************************************************\n\n");
-					printf("\tShim detected! One or more flags set!\n");
+					printf("\tShim detected! One or more shim flags set in %s\n", pe32.szExeFile);
 					// collect and read off memory values
 					printf("\tAppCompatFlag %#x\n", undocumented_remote_peb.AppCompatFlags);
 					printf("\tAppCompatFlag Low %#x\n", undocumented_remote_peb.AppCompatFlags.LowPart);
@@ -685,6 +685,15 @@ int readRemoteProcessForShims(PROCESSENTRY32 pe32, PROCESS_INFORMATION pi, WORD 
 					printf("\tAppCompatFlagsUser Low %#x\n", undocumented_remote_peb.AppCompatFlagsUser.LowPart);
 					printf("\tAppCompatFlagsUser High %#x\n", undocumented_remote_peb.AppCompatFlagsUser.HighPart);
 					printf("\tShimData Pointer %#p\n", undocumented_remote_peb.pShimData);
+					
+					if (undocumented_remote_peb.pShimData != 0){
+						wchar_t pShimDataString[MAX_PATH];
+						if (ReadProcessMemory(pi.hProcess, undocumented_remote_peb.pShimData, &pShimDataString, MAX_PATH, &bytes_read)){
+							printf("\t\tShimData String: %S <--- If a process is started in suspending mode and this string is overwritten with your dll, the shim engine will load your dll\n", pShimDataString);
+						}
+					}
+					
+
 					printf("\tAppCompatInfo Pointer %#p\n", undocumented_remote_peb.AppCompatInfo);
 					printf("*****************************************************\n\n");
 					pebResult = TRUE;
